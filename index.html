@@ -222,6 +222,7 @@
         <div class="btn-row">
           <button class="btn goldblue" type="button" id="btnCopyImg">Copy as Image</button>
           <button class="btn bluegold" type="button" id="btnCopySig">Copy with Links</button>
+          <button class="btn gold" type="button" id="btnCopyImgBanner">Image + Banner</button>
         </div>
         <div class="note" id="exportNote"></div>
       </div>
@@ -268,8 +269,9 @@ const CONFIG = {
   ruleToContact: 14,       // space under upper rule, above contact block
   contactToRule: 14,       // space under contact block, above lower rule
   ruleToLocation: 12,      // space under lower rule, above location row
-  panelPadding: 20         // white panel padding around the whole signature
+  panelPadding: 20,        // white panel padding around the whole signature
                            // (keeps it legible on dark-mode surfaces)
+  bannerGap: 6             // vertical gap between location row and news banner
 };
 
 // Default field values (specification).
@@ -284,6 +286,16 @@ const DEFAULTS = {
 // Public URL of the hosted logo, used in every exported signature.
 // PNG (600x182) for reliable rendering across all email clients.
 const HOSTED_LOGO_URL = "https://www.picturehooked.com/cwc_logo_blue_600x182.png";
+
+// News banner: hosted PNG at a fixed URL. Replace the image file monthly to
+// update all signatures centrally — no per-user changes required.
+const BANNER_IMAGE_URL = "https://www.picturehooked.com/cwc_news_banner.png";
+const BANNER_LINK_URL  = "https://www.crosswind-cap.com/news/the-role-of-self-storage-in-diversified-real-estate-investment-portfolios";
+const BANNER_NATURAL   = { w:1200, h:200 }; // native PNG dimensions (2× retina)
+// Update BANNER_CONTENT monthly — controls the canvas-rendered banner in Image+Banner export.
+const BANNER_CONTENT = {
+  title: "The Role of Self-Storage in Diversified Real Estate Investment Portfolios"
+};
 
 // Website / Insights are fixed brand links (specification).
 const LINKS = {
@@ -515,8 +527,7 @@ function buildSignatureHTML(data, logoSrc){
   const contactItems = [
     [esc(data.name),  "name"],
     [esc(data.title), "title"],
-    [esc(LINKS.websiteText), "web"],
-    [esc(LINKS.insightsText),"web"]
+    [esc(LINKS.websiteText), "web"]
   ];
   [data.tel1,data.tel2,data.tel3,data.tel4].forEach(t=>{
     if (t) contactItems.push([esc(t),"tel"]);
@@ -576,11 +587,9 @@ function buildSignatureHTML(data, logoSrc){
   }
   telRows().forEach(r => { rows += vSpace(CONFIG.rowGap) + r; });
 
-  // Row 4: Website (blue, underlined) | Insights & Research (gold, no underline)
+  // Row 4: Website (blue, underlined), left-aligned — no divider
   rows += vSpace(CONFIG.rowGap)
-       + twoZoneRow(link(LINKS.websiteText,  LINKS.websiteUrl,  "web", CONFIG.navy, true),
-                    link(LINKS.insightsText, LINKS.insightsUrl, "web", CONFIG.gold, false),
-                    Z);
+       + leftZoneRow(link(LINKS.websiteText, LINKS.websiteUrl, "web", CONFIG.navy, true), Z);
 
   // ---- Location row (own governing width; centre divider on centreline) ----
   const locationRow = twoZoneRow(
@@ -599,6 +608,25 @@ function buildSignatureHTML(data, logoSrc){
     + `style="display:block;width:${logoW}px;height:${logoH}px;border:0;outline:none;`
     + `text-decoration:none;-ms-interpolation-mode:bicubic;">`;
 
+  // News banner: scales to match the logo width so it always fits the signature.
+  // The hosted image is a fixed URL — replace the file monthly to update all
+  // signatures centrally without touching any user's signature settings.
+  const bannerW = logoW;
+  const bannerH = Math.round(bannerW * BANNER_NATURAL.h / BANNER_NATURAL.w);
+  const bannerImg = `<img src="${BANNER_IMAGE_URL}" width="${bannerW}" height="${bannerH}" `
+    + `alt="Crosswind Capital — Insights &amp; Research" `
+    + `style="display:block;width:${bannerW}px;height:${bannerH}px;border:0;outline:none;`
+    + `text-decoration:none;-ms-interpolation-mode:bicubic;">`;
+  const bannerRow = vSpace(CONFIG.bannerGap)
+    + `<table role="presentation" cellpadding="0" cellspacing="0" border="0" `
+    +   `style="border-collapse:collapse;margin:0 auto;">`
+    + `<tr><td align="center" style="text-align:center;">`
+    + `<a href="${BANNER_LINK_URL}" target="_blank" `
+    +   `style="display:block;text-decoration:none;border:0;">`
+    + bannerImg
+    + `</a>`
+    + `</td></tr></table>`;
+
   // The signature itself.
   const inner = ``
     + `<table role="presentation" cellpadding="0" cellspacing="0" border="0" `
@@ -614,6 +642,7 @@ function buildSignatureHTML(data, logoSrc){
     +   goldRule(ruleW)
     +   vSpace(CONFIG.ruleToLocation)
     +   locationRow
+    +   bannerRow
     + `</td></tr></table>`;
 
   // White panel wrapper. An explicit white background (bgcolor + inline style)
@@ -623,7 +652,7 @@ function buildSignatureHTML(data, logoSrc){
   return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" bgcolor="#ffffff" `
     + `style="border-collapse:collapse;margin:0 auto;background-color:#ffffff;">`
     + `<tr><td bgcolor="#ffffff" align="center" `
-    + `style="background-color:#ffffff;padding:${padPx}px;text-align:center;">`
+    + `style="background-color:#ffffff;padding:0 ${padPx}px 8px;text-align:center;">`
     + inner
     + `</td></tr></table>`;
 }
@@ -822,14 +851,14 @@ function renderSignatureCanvas(onReady){
   const contentW = Math.max(ruleW, logoW, locTotal);
   const canvasW = contentW + PAD*2;
 
-  let y = PAD;
+  let y = 0;
   y += logoH + CONFIG.logoToRule + 1 + CONFIG.ruleToContact;
   const contactBlockH = rowH.name
     + (tels.length>=1 ? (gap + rowH.tel) : 0)
     + (tels.length>=3 ? (gap + rowH.tel) : 0)
     + gap + rowH.web;
   y += contactBlockH + CONFIG.contactToRule + 1 + CONFIG.ruleToLocation + rowH.loc;
-  const canvasH = y + PAD;
+  const canvasH = y + 8;  // tight bottom — banner follows immediately below
 
   // --- Size the canvas (high-DPI) ---
   cvs.width = Math.round(canvasW * dpr);
@@ -888,7 +917,7 @@ function renderSignatureCanvas(onReady){
   }
 
   // --- Render top to bottom ---
-  let yy = PAD;
+  let yy = 0;
   // Logo
   const logo = new Image();
   logo.onload = function(){
@@ -920,10 +949,14 @@ function renderSignatureCanvas(onReady){
       cursor += gap; drawTwoZone(tels[0],"tel",tels[1],"tel", cursor+rowH.tel/2); cursor += rowH.tel;
       cursor += gap; drawTwoZone(tels[2],"tel",tels[3],"tel", cursor+rowH.tel/2); cursor += rowH.tel;
     }
-    // website row: website = blue + underline, insights = gold + no underline
+    // website row: left-aligned, blue, underlined
     cursor += gap;
-    drawTwoZone(LINKS.websiteText,"web", LINKS.insightsText,"web", cursor+rowH.web/2,
-      {leftColor:CONFIG.navy, leftUnderline:true, rightColor:CONFIG.gold, rightUnderline:false});
+    ctx.fillStyle = CONFIG.navy; ctx.textAlign = "left"; ctx.font = fontFor("web");
+    const webX = cx + leftEdge;
+    const webMidY = cursor + rowH.web / 2;
+    ctx.fillText(LINKS.websiteText, webX, webMidY);
+    ctx.fillRect(webX, webMidY + CONFIG.type.web.size * 0.45,
+                 measureCanvas(ctx, LINKS.websiteText, "web"), 1);
     cursor += rowH.web;
 
     // lower rule
@@ -985,6 +1018,138 @@ function copyAsImage(){
   }
 }
 
+/* Renders the news banner to an offscreen canvas at the exact display size,
+   returning a data URI. Embedding the banner as a data URI (rather than an
+   external URL) prevents email clients from displaying it at natural image
+   dimensions instead of the specified width. Update BANNER_CONTENT monthly. */
+function renderBannerCanvas(displayW, displayH){
+  const dpr = Math.max(2, window.devicePixelRatio || 1);
+  const cvs = document.createElement("canvas");
+  cvs.width  = Math.round(displayW * dpr);
+  cvs.height = Math.round(displayH * dpr);
+  const ctx = cvs.getContext("2d");
+  ctx.scale(dpr, dpr);
+
+  // Navy background
+  ctx.fillStyle = CONFIG.navy;
+  ctx.fillRect(0, 0, displayW, displayH);
+
+  // Gold left accent bar — 7px at 600px reference width, scaled proportionally
+  const barW = Math.max(3, Math.round(7 * displayW / 600));
+  ctx.fillStyle = CONFIG.gold;
+  ctx.fillRect(0, 0, barW, displayH);
+
+  // Scale layout constants from 600×100 reference
+  const s = displayW / 600;
+  const PL = Math.round(30 * s);
+  const PR = Math.round(50 * s);
+  // Font sizes: scaled but clamped so they remain readable on narrow signatures
+  const labelSz = Math.max(10, Math.round(30 * s));
+  const titleSz = Math.max( 9, Math.round(36 * s));
+  const arrowSz = Math.max(10, Math.round(30 * s));
+  const fStack = CONFIG.fontStack;
+
+  ctx.textBaseline = "middle";
+
+  // "INSIGHTS & RESEARCH" label
+  const labelY = displayH * 0.27;
+  ctx.fillStyle = CONFIG.gold;
+  ctx.font = `bold ${labelSz}px ${fStack}`;
+  ctx.fillText("INSIGHTS & RESEARCH", PL, labelY);
+
+  // Article title — regular weight, white, word-wrapped to 2 lines max
+  ctx.fillStyle = "#ffffff";
+  ctx.font = `${titleSz}px ${fStack}`;
+  const maxW = displayW - PL - PR;
+  function wrapText(text, mw){
+    const words = text.split(" ");
+    const lines = [];
+    let line = "";
+    for(const w of words){
+      const test = line ? line + " " + w : w;
+      if(ctx.measureText(test).width > mw && line){ lines.push(line); line = w; }
+      else line = test;
+    }
+    if(line) lines.push(line);
+    return lines;
+  }
+  const titleLines = wrapText(BANNER_CONTENT.title, maxW).slice(0, 2);
+  const lineH = Math.round(titleSz * 1.25);
+  let titleY = displayH * 0.53;
+  for(const line of titleLines){ ctx.fillText(line, PL, titleY); titleY += lineH; }
+
+  // "Read more →" — gold bold, bottom-right
+  ctx.fillStyle = CONFIG.gold;
+  ctx.font = `bold ${arrowSz}px ${fStack}`;
+  const arrowTxt = "Read more  →";
+  const arrowW = ctx.measureText(arrowTxt).width;
+  ctx.fillText(arrowTxt, displayW - PR - arrowW, displayH * 0.82);
+
+  return cvs;
+}
+
+/* Copy as Image + Banner: signature rendered to an embedded PNG, banner
+   rendered to a canvas data URI at exactly the right width — so email
+   clients cannot override the dimensions. Update BANNER_CONTENT and
+   BANNER_LINK_URL monthly; no per-user signature edits needed. */
+function copyImageWithBanner(){
+  let resolveHtml, rejectAll;
+  const htmlBlobP = new Promise((res, rej)=>{ resolveHtml = res; rejectAll = rej; });
+
+  try {
+    renderSignatureCanvas(function(cvs, canvasW, canvasH){
+      const sigW   = Math.round(canvasW);
+      const sigH   = Math.round(canvasH);
+      const banW   = sigW;
+      const banH   = Math.round(sigW * BANNER_NATURAL.h / BANNER_NATURAL.w);
+      const sigUrl = cvs.toDataURL("image/png");
+      const banUrl = renderBannerCanvas(banW, banH).toDataURL("image/png");
+
+      const html =
+        `<table role="presentation" cellpadding="0" cellspacing="0" border="0" bgcolor="#ffffff" `
+        + `style="border-collapse:collapse;background-color:#ffffff;">`
+        + `<tr><td align="center" style="padding:0;">`
+        +   `<img src="${sigUrl}" width="${sigW}" height="${sigH}" `
+        +   `style="display:block;width:${sigW}px;height:${sigH}px;" `
+        +   `alt="Crosswind Capital signature">`
+        + `</td></tr>`
+        + `<tr><td align="center" style="padding:${CONFIG.bannerGap}px 0 0;">`
+        +   `<a href="${BANNER_LINK_URL}" target="_blank" style="display:block;text-decoration:none;border:0;">`
+        +   `<img src="${banUrl}" width="${banW}" height="${banH}" `
+        +   `style="display:block;width:${banW}px;height:${banH}px;border:0;outline:none;`
+        +   `text-decoration:none;-ms-interpolation-mode:bicubic;" `
+        +   `alt="Crosswind Capital — Insights &amp; Research">`
+        +   `</a>`
+        + `</td></tr>`
+        + `</table>`;
+      resolveHtml(new Blob([html], {type:"text/html"}));
+    });
+  } catch(e){ rejectAll(e); }
+
+  if(navigator.clipboard && window.ClipboardItem){
+    navigator.clipboard.write([new ClipboardItem({ "text/html": htmlBlobP })])
+      .then(()=> flashToast("Signature copied — paste into your email"))
+      .catch(()=> flashToast("Copy failed — try a different browser"));
+  } else {
+    htmlBlobP.then(blob => blob.text()).then(html => {
+      const holder = document.createElement("div");
+      holder.setAttribute("contenteditable","true");
+      holder.style.cssText = "position:fixed;left:-99999px;top:0;white-space:normal;";
+      holder.innerHTML = html;
+      document.body.appendChild(holder);
+      const range = document.createRange();
+      range.selectNodeContents(holder);
+      const sel = window.getSelection();
+      sel.removeAllRanges(); sel.addRange(range);
+      let ok = false;
+      try{ ok = document.execCommand("copy"); }catch(_){ ok = false; }
+      sel.removeAllRanges();
+      document.body.removeChild(holder);
+      flashToast(ok ? "Signature copied — paste into your email" : "Copy failed — try a different browser");
+    });
+  }
+}
+
 /* =====================================================================
    WIRING
    ===================================================================== */
@@ -994,6 +1159,7 @@ FIELD_IDS.forEach(k => $("f_"+k).addEventListener("input", render));
 // Buttons.
 $("btnCopyImg").addEventListener("click", copyAsImage);
 $("btnCopySig").addEventListener("click", copyForSignature);
+$("btnCopyImgBanner").addEventListener("click", copyImageWithBanner);
 $("btnRestore").addEventListener("click", ()=>{
   writeForm(DEFAULTS);
   render();
@@ -1007,10 +1173,9 @@ function init(){
   writeForm(DEFAULTS);
   $("logoThumb").src = LOGO_DATA_URI;
   $("exportNote").innerHTML =
-    "<strong>Copy as Image</strong> works more cleanly with email clients but "
-    + "does not include links.<br>"
-    + "<strong>Copy with Links</strong> includes links but may scale poorly "
-    + "on certain email clients";
+    "<strong>Image + Banner</strong> — recommended. Signature as a clean image, linked news banner below. Best compatibility.<br>"
+    + "<strong>Copy as Image</strong> — signature only, no banner or links.<br>"
+    + "<strong>Copy with Links</strong> — includes all links but may render inconsistently on some clients.";
   // Preview renders after successful unlock (needs visible layout to measure).
 }
 init();
